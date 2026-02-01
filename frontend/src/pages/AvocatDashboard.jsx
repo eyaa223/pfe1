@@ -6,54 +6,69 @@ import axios from 'axios';
 const AvocatDashboard = () => {
   const { user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
+
   const [demandes, setDemandes] = useState([]);
+  const [beneficiaires, setBeneficiaires] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showList, setShowList] = useState(false); // pour afficher/masquer la liste
+
+  const [showDemandes, setShowDemandes] = useState(false);
+  const [showBeneficiaires, setShowBeneficiaires] = useState(false);
 
   useEffect(() => {
-    if (!user || user.role !== 'avocat') { 
-      logout(); 
-      navigate('/login'); 
-      return; 
+    if (!user || user.role !== 'avocat') {
+      logout();
+      navigate('/login');
+      return;
     }
 
-    const fetchDemandes = async () => {
+    const fetchData = async () => {
       try {
-        const res = await axios.get('http://localhost:5000/demandes', { 
-          headers: { Authorization: `Bearer ${user.token}` } 
-        });
-        setDemandes(res.data);
-      } catch { 
-        logout(); 
-        navigate('/login'); 
-      } finally { 
-        setLoading(false); 
+        const [resDemandes, resBeneficiaires] = await Promise.all([
+          axios.get('http://localhost:5000/demandes', { headers: { Authorization: `Bearer ${user.token}` } }),
+          axios.get('http://localhost:5000/avocat/beneficiaires', { headers: { Authorization: `Bearer ${user.token}` } })
+        ]);
+
+        setDemandes(resDemandes.data);
+        setBeneficiaires(resBeneficiaires.data);
+      } catch (err) {
+        console.error(err);
+        logout();
+        navigate('/login');
+      } finally {
+        setLoading(false);
       }
     };
 
-    fetchDemandes();
+    fetchData();
   }, [user, logout, navigate]);
 
-  const handleChangeStatut = async (id, statut) => {
-    const confirmChange = window.confirm(`Voulez-vous vraiment changer le statut de cette demande en "${statut}" ?`);
-    if (!confirmChange) return;
+  // 🔹 Modifier le statut avocat pour les demandes ou bénéficiaires
+  const handleChangeStatut = async (id, statut, type) => {
+    if (!window.confirm(`Voulez-vous vraiment changer le statut en "${statut}" ?`)) return;
 
     try {
-      await axios.put(
-        `http://localhost:5000/demandes/status/${id}`, 
-        { statut_avocat: statut }, 
-        { headers: { Authorization: `Bearer ${user.token}` } }
-      );
+      const url =
+        type === 'demande'
+          ? `http://localhost:5000/demandes/status/${id}`
+          : `http://localhost:5000/avocat/beneficiaires/${id}`;
 
-      setDemandes(prev => prev.map(d => d.id === id ? { ...d, statut_avocat: statut } : d));
+      await axios.put(url, { decision: statut }, { headers: { Authorization: `Bearer ${user.token}` } });
 
-      alert(`Le statut de la demande a été mis à jour : ${statut}`);
+      // 🔹 Mettre à jour directement le tableau sans supprimer
+      if (type === 'demande') {
+        setDemandes(prev => prev.map(d => d.id === id ? { ...d, statut_avocat: statut } : d));
+      } else {
+        setBeneficiaires(prev => prev.map(b => b.id === id ? { ...b, avocat_status: statut } : b));
+      }
 
-    } catch {
+      alert(`Statut mis à jour : ${statut}`);
+    } catch (err) {
+      console.error(err);
       alert('Impossible de modifier le statut');
     }
   };
 
+  // 🔹 Télécharger fichiers
   const downloadFile = async (id, field) => {
     try {
       const res = await axios.get(`http://localhost:5000/demandes/download/${id}/${field}`, {
@@ -75,61 +90,85 @@ const AvocatDashboard = () => {
   if (loading) return <p>Chargement...</p>;
 
   return (
-    <div style={{ padding:'20px' }}>
+    <div style={{ padding: '20px' }}>
       <h2>Dashboard Avocat ⚖️</h2>
 
-      <button 
-        onClick={() => setShowList(!showList)} 
-        style={{ padding:'10px 20px', marginBottom:'20px', cursor:'pointer' }}
-      >
-        {showList ? 'Masquer les demandes' : 'Afficher les demandes'}
+      {/* 🔹 Boutons pour afficher/masquer */}
+      <button onClick={() => setShowDemandes(!showDemandes)} style={btnToggle}>
+        {showDemandes ? 'Masquer les demandes' : 'Afficher les demandes'}
+      </button>
+      <button onClick={() => setShowBeneficiaires(!showBeneficiaires)} style={{ ...btnToggle, marginLeft: '10px' }}>
+        {showBeneficiaires ? 'Masquer les bénéficiaires' : 'Afficher les bénéficiaires'}
       </button>
 
-      {showList && (
+      {/* 🔹 Tableau des demandes */}
+      {showDemandes && (
         <>
           {demandes.length === 0 ? (
             <p>Aucune demande</p>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table style={tableStyle}>
               <thead>
-                <tr style={{ backgroundColor: '#f2f2f2' }}>
-                  <th style={{ border: '1px solid #ccc', padding: '8px' }}>Nom Association</th>
-                  <th style={{ border: '1px solid #ccc', padding: '8px' }}>Email</th>
-                  <th style={{ border: '1px solid #ccc', padding: '8px' }}>Statut Avocat</th>
-                  <th style={{ border: '1px solid #ccc', padding: '8px' }}>Actions</th>
-                  <th style={{ border: '1px solid #ccc', padding: '8px' }}>Documents</th>
+                <tr>
+                  <th>Nom Association</th>
+                  <th>Email</th>
+                  <th>Statut Avocat</th>
+                  <th>Actions</th>
+                  <th>Documents</th>
                 </tr>
               </thead>
               <tbody>
                 {demandes.map(d => (
                   <tr key={d.id}>
-                    <td style={{ border: '1px solid #ccc', padding: '8px' }}>{d.nom_association}</td>
-                    <td style={{ border: '1px solid #ccc', padding: '8px' }}>{d.email}</td>
-                    <td style={{ border: '1px solid #ccc', padding: '8px', textAlign: 'center' }}>
-                      <span style={{
-                        padding: '3px 8px',
-                        borderRadius: '5px',
-                        fontWeight: 'bold',
-                        color: d.statut_avocat === 'legale' ? '#155724' : d.statut_avocat === 'illegale' ? '#721c24' : 'black',
-                        backgroundColor: d.statut_avocat === 'legale' ? '#d4edda' : d.statut_avocat === 'illegale' ? '#f8d7da' : '#e2e3e5'
-                      }}>
-                        {d.statut_avocat || 'En attente'}
-                      </span>
+                    <td>{d.nom_association}</td>
+                    <td>{d.email}</td>
+                    <td style={{ textAlign: 'center' }}>{d.statut_avocat || 'En attente'}</td>
+                    <td>
+                      <button onClick={() => handleChangeStatut(d.id,'legale','demande')} style={btnStyleApprove}>Légale</button>
+                      <button onClick={() => handleChangeStatut(d.id,'illegale','demande')} style={btnStyleReject}>Illégale</button>
                     </td>
-                    <td style={{ border: '1px solid #ccc', padding: '8px', textAlign: 'center' }}>
-                      <button onClick={() => handleChangeStatut(d.id,'legale')} style={{ marginRight:'5px' }}>Légale</button>
-                      <button onClick={() => handleChangeStatut(d.id,'illegale')}>Illégale</button>
-                    </td>
-                    <td style={{ border: '1px solid #ccc', padding: '8px', textAlign: 'center' }}>
+                    <td>
                       {['doc_statut','doc_autorisation','doc_registre','doc_cin'].map(doc => (
-                        <button 
-                          key={doc} 
-                          onClick={() => downloadFile(d.id, doc)} 
-                          style={{ marginRight: '5px', cursor: 'pointer' }}
-                        >
-                          {doc}
-                        </button>
+                        <button key={doc} onClick={() => downloadFile(d.id, doc)} style={btnDoc}>{doc}</button>
                       ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+
+      {/* 🔹 Tableau des bénéficiaires */}
+      {showBeneficiaires && (
+        <>
+          {beneficiaires.length === 0 ? (
+            <p>Aucun bénéficiaire en attente</p>
+          ) : (
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th>Nom Association</th>
+                  <th>Nom de bénéficiaire</th>
+                  <th>Prénom de bénéficiaire</th>
+                  <th>Email</th>
+                  <th>Statut Avocat</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {beneficiaires.map(b => (
+                  <tr key={b.id}>
+                    <td>{b.association_nom}</td>
+                    <td>{b.nom}</td>
+                    <td>{b.prenom}</td>
+                    <td>{b.email || '-'}</td>
+                    <td style={{ textAlign: 'center' }}>{b.avocat_status || 'En attente'}</td>
+                    <td>
+                      <button onClick={() => handleChangeStatut(b.id,'legale','beneficiaire')} style={btnStyleApprove}>Légale</button>
+                      <button onClick={() => handleChangeStatut(b.id,'illegale','beneficiaire')} style={btnStyleReject}>Illégale</button>
+
                     </td>
                   </tr>
                 ))}
@@ -141,5 +180,12 @@ const AvocatDashboard = () => {
     </div>
   );
 };
+
+// 🔹 Styles
+const tableStyle = { width: '100%', borderCollapse: 'collapse', marginTop: '15px' };
+const btnToggle = { padding:'10px 20px', marginBottom:'20px', cursor:'pointer' };
+const btnStyleApprove = { padding: '5px 10px', marginRight: '5px', backgroundColor: '#4CAF50', color: 'white', border: 'none', cursor: 'pointer', borderRadius: '4px' };
+const btnStyleReject = { padding: '5px 10px', backgroundColor: '#f44336', color: 'white', border: 'none', cursor: 'pointer', borderRadius: '4px' };
+const btnDoc = { padding:'3px 5px', marginRight:'5px', cursor: 'pointer' };
 
 export default AvocatDashboard;

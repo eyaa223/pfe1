@@ -1,4 +1,4 @@
-import { useEffect, useState, useContext } from 'react';
+import { useEffect, useState, useContext, useCallback } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import AddBeneficiaireForm from '../components/AddBeneficiaireForm';
@@ -11,7 +11,7 @@ const DashboardAssociation = () => {
   const [loading, setLoading] = useState(true);
 
   // 🔹 Récupérer les infos de l'association
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const res = await axios.get(
         'http://localhost:5000/association/dashboard',
@@ -21,10 +21,10 @@ const DashboardAssociation = () => {
     } catch (err) {
       console.error('Erreur dashboard association:', err);
     }
-  };
+  }, [user]);
 
   // 🔹 Récupérer les bénéficiaires avec le nom de l'association
-  const fetchBeneficiaires = async () => {
+  const fetchBeneficiaires = useCallback(async () => {
     try {
       const res = await axios.get(
         'http://localhost:5000/beneficiaires', // backend doit renvoyer association_nom
@@ -34,13 +34,13 @@ const DashboardAssociation = () => {
     } catch (err) {
       console.error('Erreur chargement bénéficiaires:', err);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     if (user?.role === 'association') {
       Promise.all([fetchData(), fetchBeneficiaires()]).finally(() => setLoading(false));
     }
-  }, [user]);
+  }, [user, fetchData, fetchBeneficiaires]);
 
   if (loading) return <p>Chargement du dashboard...</p>;
 
@@ -98,7 +98,7 @@ const DashboardAssociation = () => {
           ) : (
             beneficiaires.map((b) => (
               <tr key={b.id}>
-                <td>{b.association_nom}</td> {/* Nom de l'association avant le nom du bénéficiaire */}
+                <td>{b.association_nom}</td>
                 <td>{b.nom}</td>
                 <td>{b.prenom}</td>
                 <td>{b.telephone}</td>
